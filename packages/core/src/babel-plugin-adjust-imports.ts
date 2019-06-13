@@ -50,6 +50,23 @@ export type Options = State['opts'];
 
 const packageCache = PackageCache.shared('embroider-stage3');
 
+export function isDefineExpression(t: any, path: any) {
+  const { node } = path;
+
+  // should we allow nested defines, or stop at the top level?
+  if (!path.isCallExpression() || node.callee.name !== 'define') {
+    return false;
+  }
+
+  const args = node.arguments;
+
+  // only match define with 3 arguments define(name: string, deps: string[], cb: Function);
+  return Array.isArray(args) && args.length === 3 &&
+    t.isStringLiteral(args[0]) &&
+    t.isArrayExpression(args[1]) &&
+    t.isFunction(args[2]);
+}
+
 function adjustSpecifier(specifier: string, sourceFile: AdjustFile, opts: State['opts']) {
   let packageName = getPackageName(specifier);
   if (!packageName) {
@@ -233,12 +250,12 @@ export default function main({ types: t }: { types: any }) {
   return {
     visitor: {
       Program: {
-        enter: function(path: NodePath<Program>, state: State) {
+        enter(path: NodePath<Program>, state: State) {
           state.emberCLIVanillaJobs = [];
           state.generatedRequires = new Set();
           addExtraImports(path, state.opts.extraImports);
         },
-        exit: function(_: any, state: State) {
+        exit(_: any, state: State) {
           state.emberCLIVanillaJobs.forEach(job => job());
         },
       },
@@ -260,6 +277,18 @@ export default function main({ types: t }: { types: any }) {
           let r = t.identifier('require');
           state.generatedRequires.add(r);
           path.replaceWith(r);
+        }
+      },
+      CallExpression(path: any) {
+        // Should/can we make this early exit when the first define was found?
+        if (isDefineExpression(t, path) === false) { return; }
+
+        const dependencies = path.node.arguments[1];
+
+        for (let dependency of dependencies.elements) {
+          t.assertStringLiteral(dependency);
+          // TODO: actually do the work
+          dependency.value = `NOT YET IMPLEMENTED PLEASE IMPLEMENT`;
         }
       },
       'ImportDeclaration|ExportNamedDeclaration|ExportAllDeclaration'(path: any, state: State) {
