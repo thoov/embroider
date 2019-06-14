@@ -279,16 +279,34 @@ export default function main({ types: t }: { types: any }) {
           path.replaceWith(r);
         }
       },
-      CallExpression(path: any) {
+      CallExpression(path: any, state: State) {
         // Should/can we make this early exit when the first define was found?
         if (isDefineExpression(t, path) === false) { return; }
+        let { opts } = state;
+
+        let file = new AdjustFile(path.hub.file.opts.filename, opts.relocatedFiles);
 
         const dependencies = path.node.arguments[1];
 
-        for (let dependency of dependencies.elements) {
-          t.assertStringLiteral(dependency);
-          // TODO: actually do the work
-          dependency.value = `NOT YET IMPLEMENTED PLEASE IMPLEMENT`;
+        const specifiers = dependencies.elements.slice();
+        specifiers.push(path.node.arguments[0]);
+
+        for (let source of specifiers) {
+          if (source.value === 'exports' || source.value === 'require') {
+            // skip "special" AMD dependencies
+            continue;
+          }
+          t.assertStringLiteral(source);
+
+          let specifier = adjustSpecifier(source.value, file, opts);
+          specifier = handleExternal(specifier, file, opts);
+          if (file.isRelocated) {
+            specifier = handleRelocation(specifier, file);
+          }
+          specifier = makeHBSExplicit(specifier, file);
+          if (specifier !== source.value) {
+            source.value = specifier;
+          }
         }
       },
       'ImportDeclaration|ExportNamedDeclaration|ExportAllDeclaration'(path: any, state: State) {
